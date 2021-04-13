@@ -24,22 +24,23 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class Scattergories implements MessageCreateListener {
 
-    private static HashMap<User, Message> messages = new HashMap<>();
+    private static HashMap<User, Message> messages = new HashMap<>(); // HashMap to store messages that were sent to each player in the game
     private static Random rand = new Random();
-    private static HashMap<User, ArrayList<String>> answers = new HashMap<>();
+    private static HashMap<User, ArrayList<String>> answers = new HashMap<>(); // Hashmap of User and String ArrayList pairs. Tracks answers that the users have given
     private static int categoryCount = 12;
-    private static String letterIMGLink;
-    private static ArrayList<User> players = new ArrayList();
+    private static String letterIMGLink; // Link to an image to the letter chosen. This can change if the game creator wants to change it
+    private static ArrayList<User> players = new ArrayList(); // List of all players who reacted with thumbs up to original message
 
-    private static AtomicBoolean running = new AtomicBoolean(true);
-    private static AtomicBoolean waitingForPlayers = new AtomicBoolean(true);
+    private static AtomicBoolean running = new AtomicBoolean(true); // AtomicBoolean to know if the game has ended or not. The game ends if the creator types !stop
+    private static AtomicBoolean waitingForPlayers = new AtomicBoolean(true); // AtomicBoolean to know if the game has started or not. Game starts when creator types !start
 
-    private static HashMap<String, String> images = new HashMap<>();
+    private static HashMap<String, String> images = new HashMap<>(); // HashMap of all images that the bot could use
 
     private static Color embedColor = new Color(155, 89, 182);
 
     Scattergories() {
         try {
+            // Store the links to all images into the "images" HashMap
             InputStream jsonStream = Scattergories.class.getResourceAsStream("resources/imagelinks.json");
             JSONParser parser = new JSONParser();
             JSONObject imageLinks = (JSONObject) parser.parse(new InputStreamReader(jsonStream, "UTF-8"));
@@ -61,12 +62,13 @@ public class Scattergories implements MessageCreateListener {
         TextChannel channel = event.getChannel();
         Message message = event.getMessage();
 
+        // Makes sure command was "!scat" or "!scattergories"
         if (!message.getContent().equalsIgnoreCase("!scat") && !message.getContent().equalsIgnoreCase("!scattergories")) {
             return;
         }
 
 
-
+        // Checks if the message was sent in a DM
         if (channel.asPrivateChannel().isPresent()) {
             return;
         }
@@ -74,10 +76,13 @@ public class Scattergories implements MessageCreateListener {
 
         running.set(true);
         waitingForPlayers.set(true);
+
         try {
             User creator = message.getAuthor().asUser().get();
 
 
+            // Set up first embed sent to all users
+            // Lets them know how to join the game and how the game works
             EmbedBuilder firstEmbed = new EmbedBuilder();
             firstEmbed.setTitle("Scattergories");
             firstEmbed.setDescription("In Scattergories, each player will be given the same letter and twelve different categories, like \"A boy's name\", and each player has to come up with a word that starts with the letter given." +
@@ -109,9 +114,10 @@ public class Scattergories implements MessageCreateListener {
             }
 
             AtomicReference<String> letter = new AtomicReference<>(newLetter("abcdefghijklmnoprstw")); // excludes q u v x y z
-            AtomicLong gameTime = new AtomicLong(240);
+            AtomicLong gameTime = new AtomicLong(240); // How long the game will last
 
 
+            // Message sent to creator to let them customize the game
             EmbedBuilder embedToCreator = new EmbedBuilder();
             embedToCreator.setTitle("Scattergories Settings");
             embedToCreator.addField("Change Letter", "Type \"!newletter\" to change the letter.");
@@ -125,7 +131,7 @@ public class Scattergories implements MessageCreateListener {
 
             long secondsUntilStart = 30;
 
-            // Admin settings message create handler
+            // Admin settings message create listener
             Bot.api.addMessageCreateListener(messageCreateEvent -> {
                 if (!waitingForPlayers.get()) {
                     return;
@@ -134,13 +140,16 @@ public class Scattergories implements MessageCreateListener {
                 Message messageReceived = messageCreateEvent.getMessage();
                 if (messageReceived.getChannel().asPrivateChannel().isPresent()) {
                     if (creator.equals(messageCreateEvent.getMessageAuthor().asUser().get())) {
+                        // Starts the game by setting waitingForPlayers to false
                         if (messageReceived.getContent().equalsIgnoreCase("!start")) {
                             waitingForPlayers.set(false);
                         }
 
                         if (messageReceived.getContent().equalsIgnoreCase("!newletter") || messageReceived.getContent().toLowerCase().startsWith("!time")) {
+                            // Checks if command was "!time"
                             if (messageReceived.getContent().startsWith("!time") && isInt(messageReceived.getContent().split(" ")[1])) {
                                 gameTime.set(Long.parseLong(messageReceived.getContent().split(" ")[1]));
+                            // Checks if command was "!newletter"
                             } else if (messageReceived.getContent().startsWith("!newletter")) {
                                 String currentLetter = letter.get().toLowerCase();
                                 do {
@@ -148,6 +157,7 @@ public class Scattergories implements MessageCreateListener {
                                 } while (letter.get().toLowerCase() == currentLetter);
 
                             }
+                            // Resend message to game creator
                             embedToCreator.removeAllFields();
                             embedToCreator.addField("Change Letter", "Type \"!newletter\" to change the letter. The current letter is **" + letter.get().toUpperCase() + "**.");
                             embedToCreator.addField("Change Time Length", "Type \"!time <seconds>\" to change the length of the game. The current length is **" + gameTime.get() + "** seconds.");
@@ -162,8 +172,10 @@ public class Scattergories implements MessageCreateListener {
 
             }).removeAfter(secondsUntilStart, TimeUnit.SECONDS);
 
+            // Counts down until start, once finished it gets all people who reacted to the original message
             players = countdownToStart(firstMessage, setupMessage, secondsUntilStart);
 
+            // Stop if only one player joined
             if (players.size() <= 1) {
                 firstMessage.delete().join();
                 return;
@@ -208,7 +220,6 @@ public class Scattergories implements MessageCreateListener {
             // Event handler for adding answers for each category
             // User provided a number
             // Make sure number is 1-12
-            //sendingEmbed.addField(botSentMessage.getEmbeds().get(0).getFields().get(1).getName(), botSentMessage.getEmbeds().get(0).getFields().get(1).getValue());
 
             ListenerManager<MessageCreateListener> messageHandler = Bot.api.addMessageCreateListener(messageCreateEvent -> {
                 if (!running.get()) {
@@ -231,14 +242,15 @@ public class Scattergories implements MessageCreateListener {
 
                             int categoryNumber = Integer.parseInt(userSentMsg.getReadableContent().split("[.]")[0]);
                             String categoryAnswer = userSentMsg.getReadableContent().replaceFirst(userSentMsg.getReadableContent().split("[.]")[0], "").substring(1);
-                            //String categoryAnswer = userSentMsg.getReadableContent().replaceAll(userSentMsg.getReadableContent().split("[.]")[0], "").substring(1);
 
+                            // Make sure answer is between 0-100 characters
                             if (categoryAnswer.length() > 0 && categoryAnswer.length() < 100) {
 
 
                                 // Make sure number is 1-12
                                 if (categoryNumber > 0 && categoryNumber < categoryCount + 1) {
 
+                                    // Remove spaces before the answer
                                     while (categoryAnswer.startsWith(" ")) {
                                         categoryAnswer = categoryAnswer.substring(1);
                                     }
@@ -264,6 +276,8 @@ public class Scattergories implements MessageCreateListener {
 
                                             StringBuilder newCategoryMessageBuilder = new StringBuilder();
                                             String userCategories = botSentMessage.getEmbeds().get(0).getFields().get(0).getValue();
+
+                                            // Update categories message with new answer
                                             for (int i = 0; i < userCategories.split("\n").length; i++) {
                                                 if (i + 1 == categoryNumber) {
                                                     newCategoryMessageBuilder.append((i + 1) + ". " + categories.get(i) + " **" + categoryAnswer + "**\n");
@@ -347,6 +361,7 @@ public class Scattergories implements MessageCreateListener {
                 answersByRound.add(currentAnswers);
             }
 
+            // If there's an empty answer, it is set to null
             for (int i = 0; i < answersByRound.size(); i++) {
                 StringBuilder testForAnswers = new StringBuilder();
                 for (Object key : answersByRound.get(i).keySet()) {
@@ -380,17 +395,19 @@ public class Scattergories implements MessageCreateListener {
                 return;
             }
 
+            // Lets the user know that the answering period has ended
             EmbedBuilder answersDoneBuilder = new EmbedBuilder()
                     .setColor(embedColor)
                     .setTitle("Scattergories")
                     .setDescription("Time's up! Please return to <#" + channel.getIdAsString() + "> to compare answers.")
                     .setFooter("Thanks for submitting your answers!")
                     .setThumbnail(images.get("scat-logo").toString());
+            // Send to all players
             for (int i = 0; i < players.size(); i++) {
                 players.get(i).sendMessage(answersDoneBuilder);
             }
 
-
+            // Set up points HashMap
             HashMap<User, Long> points = new HashMap();
             for (int i = 0; i < players.size(); i++) {
                 points.put(players.get(i), 0L);
@@ -413,12 +430,13 @@ public class Scattergories implements MessageCreateListener {
                     msgs.put(channel.sendMessage(roundEmbed).join(), null);
                     countDownRounds(msgs, 10);
 
-                    // Round with at least one answer
+                // Round with at least one answer
                 } else {
                     HashMap<Message, User> messageToSubmitter = new HashMap();
 
 
                     msgs.put(channel.sendMessage(roundEmbed).join(), null);
+                    // Send all user-submitted answers
                     for (Object key : answersByRound.get(i).keySet()) {
                         User submitter = (User) key;
                         Message m = channel.sendMessage(submitter.getName() + ": " + answersByRound.get(i).get(key)).join();
@@ -433,6 +451,8 @@ public class Scattergories implements MessageCreateListener {
 
 
                     StringBuilder resultsBuilder = new StringBuilder();
+
+                    // Go through each answer, determine if it is accepted or rejected
                     for (Object key : roundPoints.keySet()) {
                         HashMap<String, Long> currentPoints = roundPoints.get(key);
 
@@ -441,9 +461,11 @@ public class Scattergories implements MessageCreateListener {
                         long yesVoteCount = currentPoints.get("yes");
                         long noVoteCount = currentPoints.get("no");
                         resultsBuilder.append(" (" + yesVoteCount + " yes / " + noVoteCount + " no)");
+                        // More yes than no
                         if (yesVoteCount > noVoteCount) {
                             points.put(u, points.get(u) + 1);
                             resultsBuilder.append(" ✅");
+                        // More no than yes, or same amount
                         } else if (yesVoteCount < noVoteCount || yesVoteCount == noVoteCount) {
                             // User didn't get any points
                             resultsBuilder.append(" ❌");
@@ -452,6 +474,7 @@ public class Scattergories implements MessageCreateListener {
                     }
 
 
+                    // Show results for each answer
                     for (Object key : msgs.keySet()) {
                         Message m = (Message) key;
                         if (!m.getEmbeds().isEmpty()) {
@@ -463,6 +486,7 @@ public class Scattergories implements MessageCreateListener {
                 }
             }
 
+            // Set up rankings message
             EmbedBuilder rankingsBuilder = new EmbedBuilder()
                     .setTitle("Scattergories")
                     .setFooter("Thanks for playing!");
@@ -473,7 +497,7 @@ public class Scattergories implements MessageCreateListener {
                 rankingsMap.put(u, Integer.parseInt(points.get(key).toString()));
             }
 
-            // Sort the LHM
+            // Sort the LinkedHashMap
             List<Map.Entry<User, Integer>> entries = new ArrayList<Map.Entry<User, Integer>>( rankingsMap.entrySet() );
             Collections.sort(entries, new Comparator<Map.Entry<User, Integer>>(){
 
@@ -499,19 +523,23 @@ public class Scattergories implements MessageCreateListener {
             int j = 0;
             for (int i = 0; i < reverseOrderedKeys.size(); i++) {
                 String pointOrPoints = "";
+                // Makes sure the bot doesn't say "1 points"
                 if (points.get(reverseOrderedKeys.get(i)) == 1) {
                     pointOrPoints = "point";
                 } else {
                     pointOrPoints = "points";
                 }
 
+                // Puts score for the first user
                 if (i == 0) {
                     rankingsString.append((j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
 
-                    // Current person has same amount of points as previous person (tie)
+                // Current person has same amount of points as previous person (tie)
                 } else if (points.get(reverseOrderedKeys.get(i - 1)) == points.get(reverseOrderedKeys.get(i))) {
                     rankingsString.append(", " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
                     continue;
+
+                // Puts score for users
                 } else {
                     rankingsString.append("\n" + (j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
                 }
@@ -554,6 +582,7 @@ public class Scattergories implements MessageCreateListener {
 
 
             try {
+                // Get users who reacted to initial message with 👍
                 for (int i = 0; i < m.getReactions().size(); i++) {
                     Reaction reaction = m.getReactions().get(i);
                     List<User> users = reaction.getUsers().get();
@@ -572,6 +601,7 @@ public class Scattergories implements MessageCreateListener {
 
 
 
+                // Update message so it displays users who joined
                 if (players.size() > 0) {
                     StringBuilder b = new StringBuilder();
                     for (int i = 0; i < players.size(); i++) {
@@ -580,6 +610,7 @@ public class Scattergories implements MessageCreateListener {
                     builder.addField("Players", b.toString());
                 }
 
+                // Update the timer
                 EmbedBuilder adminEmbedBuilder = adminMessage.getEmbeds().get(0).toBuilder();
                 if (secondsUntilStart == 1) {
                     m.edit(builder.setFooter("The game will start in " + secondsUntilStart + " second."));
@@ -599,6 +630,7 @@ public class Scattergories implements MessageCreateListener {
             }
 
         }
+        // Show that the game has started once the timer has ended
         EmbedBuilder builder = m.getEmbeds().get(0).toBuilder();
         builder.removeAllFields();
         builder.addField("How to Join", "React with 👍 to join the game.");
@@ -624,6 +656,7 @@ public class Scattergories implements MessageCreateListener {
                 if (!running.get()) {
                     break;
                 }
+                // Update timer for each user
                 for (Object keyObj : messages.keySet()) {
                     EmbedBuilder sendingEmbed = messages.get(keyObj).getEmbeds().get(0).toBuilder();
                     if (secondsUntilEnd == 1) {
@@ -667,6 +700,7 @@ public class Scattergories implements MessageCreateListener {
             ArrayList<Message> embedMessages = new ArrayList();
             ArrayList<Message> reactMessages = new ArrayList();
 
+            // Get messages with embeds and messages without
             for (int i = 0; i < messages.size(); i++) {
                 if (!messages.get(i).getEmbeds().isEmpty()) {
                     embedMessages.add(messages.get(i));
@@ -682,6 +716,7 @@ public class Scattergories implements MessageCreateListener {
                 for (int i = 0; i < embedMessages.size(); i++) {
                     Message m = embedMessages.get(i);
                     EmbedBuilder builder = m.getEmbeds().get(0).toBuilder();
+                    // Update timer
                     if (seconds == 1) {
                         builder.setFooter("The round will end in " + seconds + " second.");
                     } else {
@@ -692,7 +727,7 @@ public class Scattergories implements MessageCreateListener {
 
                 }
 
-
+                // Go through answers, check if all players have voted
                 for (int i = 0; i < reactMessages.size(); i++) {
                     try {
                         Message m = reactMessages.get(i);
@@ -722,7 +757,7 @@ public class Scattergories implements MessageCreateListener {
                             break;
                         }
 
-
+                        // End game if all users have voted
                         if (ups.size() + downs.size() >= players.size()) {
                             stop = true;
                         } else {
@@ -742,6 +777,7 @@ public class Scattergories implements MessageCreateListener {
                 Thread.sleep(2000);
 
             }
+            // End voting round
             for (int i = 0; i < embedMessages.size(); i++) {
                 Message m = embedMessages.get(i);
                 EmbedBuilder builder = m.getEmbeds().get(0).toBuilder();
@@ -750,6 +786,7 @@ public class Scattergories implements MessageCreateListener {
             }
             HashMap<User, HashMap<String, Long>> pointsMap = new HashMap();
 
+            // Remove bot submitted emojis
             for (int i = 0; i < reactMessages.size(); i++) {
                 Message m = reactMessages.get(i);
                 m.removeOwnReactionByEmoji("✅");
@@ -759,7 +796,7 @@ public class Scattergories implements MessageCreateListener {
                 ArrayList<User> downs = new ArrayList();
 
 
-
+                // Get all users that voted yes
                 try {
                     List <User> upsTemp = m.getReactionByEmoji("✅").get().getUsers().get();
                     for (int j = 0; j < upsTemp.size(); j++) {
@@ -771,6 +808,7 @@ public class Scattergories implements MessageCreateListener {
                     // There were no reactions
                 }
 
+                // Get all users that voted no
                 try {
                     List <User> downsTemp = m.getReactionByEmoji("❌").get().getUsers().get();
                     for (int j = 0; j < downsTemp.size(); j++) {
@@ -785,7 +823,7 @@ public class Scattergories implements MessageCreateListener {
                 }
 
 
-
+                // Set up HashMap to return each answer with its votes
                 HashMap<String, Long> temp = new HashMap();
                 temp.put("yes", (long)ups.size());
                 temp.put("no", (long)downs.size());
