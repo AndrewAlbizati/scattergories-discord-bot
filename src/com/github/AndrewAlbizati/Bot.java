@@ -23,7 +23,9 @@ public class Bot {
         }
         api = new DiscordApiBuilder().setToken(token).setAllIntents().login().join();
 
-        api.updateStatus(UserStatus.IDLE);
+        System.out.println("Logged in as " + api.getYourself().getDiscriminatedName());
+
+        api.updateStatus(UserStatus.ONLINE);
 
         api.updateActivity(ActivityType.PLAYING, "Type !scat to start a game.");
 

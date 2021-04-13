@@ -14,10 +14,7 @@ import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
 import java.awt.*;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.UnsupportedEncodingException;
+import java.io.*;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -98,9 +95,10 @@ public class Scattergories implements MessageCreateListener {
             // Generate letters, categories
             ArrayList<String> categories = new ArrayList();
 
-            InputStream jsonPath = Scattergories.class.getResourceAsStream("resources/categories.json");
+
+            FileReader reader = new FileReader("categories.json");
             JSONParser parser = new JSONParser();
-            JSONArray allCategories = (JSONArray) parser.parse(new InputStreamReader(jsonPath, "UTF-8"));
+            JSONArray allCategories = (JSONArray)parser.parse(reader);
 
             for (int i = 0; i < categoryCount; i++) {
                 int index = rand.nextInt(allCategories.size());
