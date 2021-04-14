@@ -73,7 +73,9 @@ public class Scattergories implements MessageCreateListener {
             return;
         }
 
-
+        messages.clear();
+        answers.clear();
+        players.clear();
         running.set(true);
         waitingForPlayers.set(true);
 
@@ -278,16 +280,22 @@ public class Scattergories implements MessageCreateListener {
                                             String userCategories = botSentMessage.getEmbeds().get(0).getFields().get(0).getValue();
 
                                             // Update categories message with new answer
+                                            int userAnswerCount = 0;
                                             for (int i = 0; i < userCategories.split("\n").length; i++) {
                                                 if (i + 1 == categoryNumber) {
                                                     newCategoryMessageBuilder.append((i + 1) + ". " + categories.get(i) + " **" + categoryAnswer + "**\n");
+                                                    userAnswerCount++;
                                                 } else {
-                                                    newCategoryMessageBuilder.append(userCategories.split("\n")[i] + "\n");
+                                                    String category = userCategories.split("\n")[i] + "\n";
+                                                    newCategoryMessageBuilder.append(category);
+                                                    if (category.contains("**")) {
+                                                        userAnswerCount++;
+                                                    }
                                                 }
 
                                             }
 
-                                            sendingEmbed.addField("Categories", newCategoryMessageBuilder.toString());
+                                            sendingEmbed.addField("Categories (" + userAnswerCount + " / " + categoryCount + ")", newCategoryMessageBuilder.toString());
 
                                             sendingEmbed.addField(botSentMessage.getEmbeds().get(0).getFields().get(1).getName(), botSentMessage.getEmbeds().get(0).getFields().get(1).getValue());
 
