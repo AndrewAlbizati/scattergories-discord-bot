@@ -19,26 +19,28 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class Scattergories implements MessageCreateListener {
-
-    private static HashMap<User, Message> messages = new HashMap<>(); // HashMap to store messages that were sent to each player in the game
+public class Scattergories extends Thread {
+    private HashMap<User, Message> messages = new HashMap<>(); // HashMap to store messages that were sent to each player in the game
     private static Random rand = new Random();
-    private static HashMap<User, ArrayList<String>> answers = new HashMap<>(); // Hashmap of User and String ArrayList pairs. Tracks answers that the users have given
-    private static int categoryCount = 12;
-    private static String letterIMGLink; // Link to an image to the letter chosen. This can change if the game creator wants to change it
-    private static ArrayList<User> players = new ArrayList(); // List of all players who reacted with thumbs up to original message
+    private HashMap<User, ArrayList<String>> answers = new HashMap<>(); // Hashmap of User and String ArrayList pairs. Tracks answers that the users have given
+    private int categoryCount = 12;
+    private String letterIMGLink; // Link to an image to the letter chosen. This can change if the game creator wants to change it
+    private ArrayList<User> players = new ArrayList(); // List of all players who reacted with thumbs up to original message
 
-    private static AtomicBoolean running = new AtomicBoolean(true); // AtomicBoolean to know if the game has ended or not. The game ends if the creator types !stop
-    private static AtomicBoolean waitingForPlayers = new AtomicBoolean(true); // AtomicBoolean to know if the game has started or not. Game starts when creator types !start
+    private AtomicBoolean running = new AtomicBoolean(true); // AtomicBoolean to know if the game has ended or not. The game ends if the creator types !stop
+    private AtomicBoolean waitingForPlayers = new AtomicBoolean(true); // AtomicBoolean to know if the game has started or not. Game starts when creator types !start
 
     private static HashMap<String, String> images = new HashMap<>(); // HashMap of all images that the bot could use
 
     private static Color embedColor = new Color(155, 89, 182);
 
-    Scattergories() {
+    private MessageCreateEvent event;
+    public Scattergories(MessageCreateEvent event) {
+        this.event = event;
         try {
             // Store the links to all images into the "images" HashMap
             InputStream jsonStream = Scattergories.class.getResourceAsStream("resources/imagelinks.json");
@@ -54,11 +56,10 @@ public class Scattergories implements MessageCreateListener {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
     }
 
-
-    @Override
-    public void onMessageCreate(MessageCreateEvent event) {
+    public void run() {
         TextChannel channel = event.getChannel();
         Message message = event.getMessage();
 
@@ -99,6 +100,76 @@ public class Scattergories implements MessageCreateListener {
             firstMessage.addReaction("👍").join();
 
 
+
+            AtomicReference<String> letter = new AtomicReference<>(newLetter("abcdefghijklmnoprstw")); // excludes q u v x y z
+            AtomicLong gameTime = new AtomicLong(240); // How long the game will last
+
+
+            // Message sent to creator to let them customize the game
+            EmbedBuilder embedToCreator = new EmbedBuilder();
+            embedToCreator.setTitle("Scattergories Settings");
+            embedToCreator.addField("Change Letter", "Type \"!newletter\" to change the letter.");
+            embedToCreator.addField("Change Category Count", "You can change the amount of categories by typing \"!categories <number>\". The game will have **" + categoryCount + "** categories.");
+            embedToCreator.addField("Change Time Length", "Type \"!time <seconds>\" to change the length of the game. The current length is **" + gameTime.get() + "** seconds.");
+            embedToCreator.addField("Starting a Game", "You can start a game by typing \"!start\".");
+            embedToCreator.addField("Stopping a Game", "You can stop a game by typing \"!stop\".");
+            embedToCreator.setThumbnail(images.get(letter.get().toLowerCase()).toString());
+            embedToCreator.setColor(embedColor);
+
+            Message setupMessage = creator.sendMessage(embedToCreator).join();
+
+            long secondsUntilStart = 30;
+
+            AtomicInteger atomCategoryCount = new AtomicInteger(categoryCount);
+            // Admin settings message create listener
+            Bot.api.addMessageCreateListener(messageCreateEvent -> {
+                if (!waitingForPlayers.get()) {
+                    return;
+                }
+
+                Message messageReceived = messageCreateEvent.getMessage();
+                if (messageReceived.getChannel().asPrivateChannel().isPresent()) {
+                    if (creator.equals(messageCreateEvent.getMessageAuthor().asUser().get())) {
+                        // Starts the game by setting waitingForPlayers to false
+                        if (messageReceived.getContent().equalsIgnoreCase("!start")) {
+                            waitingForPlayers.set(false);
+                        }
+
+                        if (messageReceived.getContent().equalsIgnoreCase("!newletter") || messageReceived.getContent().toLowerCase().startsWith("!time") || messageReceived.getContent().toLowerCase().startsWith("!categories")) {
+                            // Checks if command was "!time"
+                            if (messageReceived.getContent().startsWith("!time") && isInt(messageReceived.getContent().split(" ")[1])) {
+                                gameTime.set(Long.parseLong(messageReceived.getContent().split(" ")[1]));
+                                // Checks if command was "!newletter"
+                            } else if (messageReceived.getContent().startsWith("!newletter")) {
+                                String currentLetter = letter.get().toLowerCase();
+                                do {
+                                    letter.set(newLetter("abcdefghijklmnoprstw"));
+                                } while (letter.get().toLowerCase() == currentLetter);
+
+                            } else if (messageReceived.getContent().startsWith("!categories")) {
+                                int num = Integer.parseInt(messageReceived.getContent().split(" ")[1]);
+                                atomCategoryCount.set(num);
+                            }
+                            // Resend message to game creator
+                            embedToCreator.removeAllFields();
+                            embedToCreator.addField("Change Letter", "Type \"!newletter\" to change the letter. The current letter is **" + letter.get().toUpperCase() + "**.");
+                            embedToCreator.addField("Change Category Count", "You can change the amount of categories by typing \"!categories <number>\". The game will have **" + atomCategoryCount.get() + "** categories.");
+                            embedToCreator.addField("Change Time Length", "Type \"!time <seconds>\" to change the length of the game. The current length is **" + gameTime.get() + "** seconds.");
+                            embedToCreator.addField("Starting a Game", "You can start a game by typing \"!start\".");
+                            embedToCreator.addField("Stopping a Game", "You can stop a game by typing \"!stop\".");
+                            embedToCreator.setThumbnail(images.get(letter.get().toLowerCase()).toString());
+                            setupMessage.edit(embedToCreator).join();
+
+                        }
+                    }
+                }
+
+            }).removeAfter(secondsUntilStart, TimeUnit.SECONDS);
+
+            // Counts down until start, once finished it gets all people who reacted to the original message
+            players = countdownToStart(firstMessage, setupMessage, secondsUntilStart);
+
+            categoryCount = atomCategoryCount.get();
             // Generate letters, categories
             ArrayList<String> categories = new ArrayList();
 
@@ -114,68 +185,6 @@ public class Scattergories implements MessageCreateListener {
                 categories.add((String) category);
                 allCategories.remove(category);
             }
-
-            AtomicReference<String> letter = new AtomicReference<>(newLetter("abcdefghijklmnoprstw")); // excludes q u v x y z
-            AtomicLong gameTime = new AtomicLong(240); // How long the game will last
-
-
-            // Message sent to creator to let them customize the game
-            EmbedBuilder embedToCreator = new EmbedBuilder();
-            embedToCreator.setTitle("Scattergories Settings");
-            embedToCreator.addField("Change Letter", "Type \"!newletter\" to change the letter.");
-            embedToCreator.addField("Change Time Length", "Type \"!time <seconds>\" to change the length of the game. The current length is **" + gameTime.get() + "** seconds.");
-            embedToCreator.addField("Starting a Game", "You can start a game by typing \"!start\".");
-            embedToCreator.addField("Stopping a Game", "You can stop a game by typing \"!stop\".");
-            embedToCreator.setThumbnail(images.get(letter.get().toLowerCase()).toString());
-            embedToCreator.setColor(embedColor);
-
-            Message setupMessage = creator.sendMessage(embedToCreator).join();
-
-            long secondsUntilStart = 30;
-
-            // Admin settings message create listener
-            Bot.api.addMessageCreateListener(messageCreateEvent -> {
-                if (!waitingForPlayers.get()) {
-                    return;
-                }
-
-                Message messageReceived = messageCreateEvent.getMessage();
-                if (messageReceived.getChannel().asPrivateChannel().isPresent()) {
-                    if (creator.equals(messageCreateEvent.getMessageAuthor().asUser().get())) {
-                        // Starts the game by setting waitingForPlayers to false
-                        if (messageReceived.getContent().equalsIgnoreCase("!start")) {
-                            waitingForPlayers.set(false);
-                        }
-
-                        if (messageReceived.getContent().equalsIgnoreCase("!newletter") || messageReceived.getContent().toLowerCase().startsWith("!time")) {
-                            // Checks if command was "!time"
-                            if (messageReceived.getContent().startsWith("!time") && isInt(messageReceived.getContent().split(" ")[1])) {
-                                gameTime.set(Long.parseLong(messageReceived.getContent().split(" ")[1]));
-                            // Checks if command was "!newletter"
-                            } else if (messageReceived.getContent().startsWith("!newletter")) {
-                                String currentLetter = letter.get().toLowerCase();
-                                do {
-                                    letter.set(newLetter("abcdefghijklmnoprstw"));
-                                } while (letter.get().toLowerCase() == currentLetter);
-
-                            }
-                            // Resend message to game creator
-                            embedToCreator.removeAllFields();
-                            embedToCreator.addField("Change Letter", "Type \"!newletter\" to change the letter. The current letter is **" + letter.get().toUpperCase() + "**.");
-                            embedToCreator.addField("Change Time Length", "Type \"!time <seconds>\" to change the length of the game. The current length is **" + gameTime.get() + "** seconds.");
-                            embedToCreator.addField("Starting a Game", "You can start a game by typing \"!start\".");
-                            embedToCreator.addField("Stopping a Game", "You can stop a game by typing \"!stop\".");
-                            embedToCreator.setThumbnail(images.get(letter.get().toLowerCase()).toString());
-                            setupMessage.edit(embedToCreator).join();
-
-                        }
-                    }
-                }
-
-            }).removeAfter(secondsUntilStart, TimeUnit.SECONDS);
-
-            // Counts down until start, once finished it gets all people who reacted to the original message
-            players = countdownToStart(firstMessage, setupMessage, secondsUntilStart);
 
             // Stop if only one player joined
             if (players.size() <= 1) {
@@ -438,7 +447,7 @@ public class Scattergories implements MessageCreateListener {
                     msgs.put(channel.sendMessage(roundEmbed).join(), null);
                     countDownRounds(msgs, 10);
 
-                // Round with at least one answer
+                    // Round with at least one answer
                 } else {
                     HashMap<Message, User> messageToSubmitter = new HashMap();
 
@@ -473,7 +482,7 @@ public class Scattergories implements MessageCreateListener {
                         if (yesVoteCount > noVoteCount) {
                             points.put(u, points.get(u) + 1);
                             resultsBuilder.append(" ✅");
-                        // More no than yes, or same amount
+                            // More no than yes, or same amount
                         } else if (yesVoteCount < noVoteCount || yesVoteCount == noVoteCount) {
                             // User didn't get any points
                             resultsBuilder.append(" ❌");
@@ -506,7 +515,7 @@ public class Scattergories implements MessageCreateListener {
             }
 
             // Sort the LinkedHashMap
-            List<Map.Entry<User, Integer>> entries = new ArrayList<Map.Entry<User, Integer>>( rankingsMap.entrySet() );
+            java.util.List<Map.Entry<User, Integer>> entries = new ArrayList<Map.Entry<User, Integer>>( rankingsMap.entrySet() );
             Collections.sort(entries, new Comparator<Map.Entry<User, Integer>>(){
 
                 public int compare(Map.Entry<User, Integer> entry1, Map.Entry<User, Integer> entry2) {
@@ -542,12 +551,12 @@ public class Scattergories implements MessageCreateListener {
                 if (i == 0) {
                     rankingsString.append((j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
 
-                // Current person has same amount of points as previous person (tie)
+                    // Current person has same amount of points as previous person (tie)
                 } else if (points.get(reverseOrderedKeys.get(i - 1)) == points.get(reverseOrderedKeys.get(i))) {
                     rankingsString.append(", " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
                     continue;
 
-                // Puts score for users
+                    // Puts score for users
                 } else {
                     rankingsString.append("\n" + (j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
                 }
@@ -581,7 +590,7 @@ public class Scattergories implements MessageCreateListener {
         return String.valueOf(letters.charAt(rand.nextInt(letters.length())));
     }
 
-    private static ArrayList<User> countdownToStart(Message m, Message adminMessage, long secondsUntilStart) {
+    private ArrayList<User> countdownToStart(Message m, Message adminMessage, long secondsUntilStart) {
         ArrayList<User> players = new ArrayList();
 
         while (secondsUntilStart > 0) {
@@ -658,7 +667,7 @@ public class Scattergories implements MessageCreateListener {
         return players;
     }
 
-    private static void countdownToEnd(long secondsUntilEnd) {
+    private void countdownToEnd(long secondsUntilEnd) {
         try {
             while (secondsUntilEnd > 0) {
                 if (!running.get()) {
@@ -698,7 +707,7 @@ public class Scattergories implements MessageCreateListener {
         }
     }
 
-    private static HashMap<User, HashMap<String, Long>> countDownRounds(HashMap<Message, User> messagesMap, long seconds) {
+    private HashMap<User, HashMap<String, Long>> countDownRounds(HashMap<Message, User> messagesMap, long seconds) {
         try {
             ArrayList<Message> messages = new ArrayList();
             for (Object o : messagesMap.keySet()) {
