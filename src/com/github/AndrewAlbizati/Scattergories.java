@@ -777,6 +777,16 @@ public class Scattergories extends Thread {
 
                             }
                             for (int j = 0; j < downsTemp.size(); j++) {
+                                boolean flag = true;
+                                for (User u1 : ups) {
+                                    if (u1.getIdAsString().equalsIgnoreCase(downsTemp.get(j).getIdAsString())) {
+                                        flag = false;
+                                    }
+                                }
+                                if (!flag) {
+                                    continue;
+                                }
+
                                 for (User u : users) {
                                     if (u.getIdAsString().equalsIgnoreCase(downsTemp.get(j).getIdAsString())) {
                                         downs.add(downsTemp.get(j));
