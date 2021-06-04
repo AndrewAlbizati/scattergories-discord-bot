@@ -39,11 +39,9 @@ public class Bot {
         // Add message create listener for the !scat command
         api.addMessageCreateListener(event -> {
             if (event.getMessageContent().equalsIgnoreCase("!scat") || event.getMessage().getContent().equalsIgnoreCase("!scattergories")) {
-                Scattergories scattergories = new Scattergories(event);
+                Scattergories scattergories = new Scattergories(event, api);
                 scattergories.start();
             }
         });
-
-
     }
 }
