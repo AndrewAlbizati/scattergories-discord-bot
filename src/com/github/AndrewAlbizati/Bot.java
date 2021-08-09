@@ -16,13 +16,11 @@ public class Bot {
         String token = sc.nextLine();
 
         // Make sure token is valid
-        if (token == null) {
+        if (token == null)
             return;
-        }
 
-        if (token.length() == 0) {
+        if (token.length() == 0)
             return;
-        }
 
         // Create the bot
         api = new DiscordApiBuilder().setToken(token).setAllIntents().login().join();
@@ -36,9 +34,10 @@ public class Bot {
         api.updateActivity(ActivityType.PLAYING, "Type !scat to start a game.");
 
 
-        // Add message create listener for the !scat command
+        // Add message create listener for the !scattergories or !scat command
         api.addMessageCreateListener(event -> {
             if (event.getMessageContent().equalsIgnoreCase("!scat") || event.getMessage().getContent().equalsIgnoreCase("!scattergories")) {
+                // Start Scattergories in a new thread to avoid issues with running long code in MessageCreateListeners
                 Scattergories scattergories = new Scattergories(event, api);
                 scattergories.start();
             }

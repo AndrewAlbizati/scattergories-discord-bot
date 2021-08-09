@@ -34,12 +34,12 @@ public class Scattergories extends Thread {
     private AtomicBoolean running = new AtomicBoolean(true); // AtomicBoolean to know if the game has ended or not. The game ends if the creator types !stop
     private AtomicBoolean waitingForPlayers = new AtomicBoolean(true); // AtomicBoolean to know if the game has started or not. Game starts when creator types !start
 
-    private static HashMap<String, String> images = new HashMap<>(); // HashMap of all images that the bot could use
+    private static HashMap<String, String> images = new HashMap<>(); // HashMap of all images that the bot can use
 
-    private static Color embedColor = new Color(155, 89, 182);
+    private static final Color embedColor = new Color(155, 89, 182);
 
-    private MessageCreateEvent event;
-    private DiscordApi api;
+    private final MessageCreateEvent event;
+    private final DiscordApi api;
     public Scattergories(MessageCreateEvent event, DiscordApi api) {
         this.event = event;
         this.api = api;
@@ -53,9 +53,7 @@ public class Scattergories extends Thread {
                 images.put(key.toString(), imageLinks.get(key).toString());
             }
 
-        } catch (ParseException | UnsupportedEncodingException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
+        } catch (ParseException | IOException e) {
             e.printStackTrace();
         }
     }
@@ -75,510 +73,515 @@ public class Scattergories extends Thread {
         running.set(true);
         waitingForPlayers.set(true);
 
-        try {
-            User creator = message.getAuthor().asUser().get();
 
-            // Set up first embed sent to all users
-            // Lets them know how to join the game and how the game works
-            EmbedBuilder firstEmbed = new EmbedBuilder();
-            firstEmbed.setTitle("Scattergories");
-            firstEmbed.setDescription("In Scattergories, each player will be given the same letter and twelve different categories, like \"A boy's name\", and each player has to come up with a word that starts with the letter given." +
-                    "\n\nWhen the clock reaches 0, each answer will be compared, and if two or more players have the same answer, neither player gets any points.");
+        User creator = message.getAuthor().asUser().get();
 
-            firstEmbed.addField("How to Join", "React with 👍 to join the game.");
-            firstEmbed.setThumbnail(images.get("scat-logo").toString());
-            firstEmbed.setColor(embedColor);
+        // Set up first embed sent to all users
+        // Lets them know how to join the game and how the game works
+        EmbedBuilder firstEmbed = new EmbedBuilder();
+        firstEmbed.setTitle("Scattergories");
+        firstEmbed.setDescription("In Scattergories, each player will be given the same letter and twelve different categories, like \"A boy's name\", and each player has to come up with a word that starts with the letter given." +
+                "\n\nWhen the clock reaches 0, each answer will be compared, and if two or more players have the same answer, neither player gets any points.");
 
-
-            Message firstMessage = channel.sendMessage(firstEmbed).join();
-            firstMessage.addReaction("👍").join();
+        firstEmbed.addField("How to Join", "React with 👍 to join the game.");
+        firstEmbed.setThumbnail(images.get("scat-logo").toString());
+        firstEmbed.setColor(embedColor);
 
 
-            AtomicReference<String> letter = new AtomicReference<>(newLetter("abcdefghijklmnoprstw")); // excludes q u v x y z
-            AtomicInteger gameTime = new AtomicInteger(240); // How long the game will last
+        Message firstMessage = channel.sendMessage(firstEmbed).join();
+        firstMessage.addReaction("👍").join();
 
 
-            // Message sent to creator to let them customize the game
-            EmbedBuilder embedToCreator = new EmbedBuilder();
-            embedToCreator.setTitle("Scattergories Settings");
-            embedToCreator.addField("Change Letter", "Type \"!newletter\" to change the letter.");
-            embedToCreator.addField("Change Category Count", "You can change the amount of categories by typing \"!categories <number>\". The game will have **" + categoryCount + "** categories.");
+        AtomicReference<String> letter = new AtomicReference<>(newLetter("abcdefghijklmnoprstw")); // excludes q u v x y z
+        AtomicInteger gameTime = new AtomicInteger(240); // How long the game will last
+
+
+        // Message sent to creator to let them customize the game
+        EmbedBuilder embedToCreator = new EmbedBuilder();
+        embedToCreator.setTitle("Scattergories Settings");
+        embedToCreator.addField("Change Letter", "Type \"!newletter\" to change the letter.");
+        embedToCreator.addField("Change Category Count", "You can change the amount of categories by typing \"!categories <number>\". The game will have **" + categoryCount + "** categories.");
+        embedToCreator.addField("Change Time Length", "Type \"!time <seconds>\" to change the length of the game. The current length is **" + gameTime.get() + "** seconds.");
+        embedToCreator.addField("Starting a Game", "You can start a game by typing \"!start\".");
+        embedToCreator.addField("Stopping a Game", "You can stop a game by typing \"!stop\".");
+        embedToCreator.setThumbnail(images.get(letter.get().toLowerCase()));
+        embedToCreator.setColor(embedColor);
+
+        Message setupMessage = creator.sendMessage(embedToCreator).join();
+
+        int secondsUntilStart = 30;
+
+
+        AtomicInteger atomCategoryCount = new AtomicInteger(categoryCount);
+        // Admin settings message create listener
+        api.addMessageCreateListener(messageCreateEvent -> {
+            if (!waitingForPlayers.get())
+                return;
+
+            Message messageReceived = messageCreateEvent.getMessage();
+
+            // Message is sent in a DM
+            if (!messageReceived.getChannel().asPrivateChannel().isPresent())
+                return;
+
+            // User who sent the message is the creator
+            if (!creator.equals(messageCreateEvent.getMessageAuthor().asUser().get()))
+                return;
+
+            // Starts the game by setting waitingForPlayers to false
+            if (messageReceived.getContent().equalsIgnoreCase("!start"))
+                waitingForPlayers.set(false);
+
+            // Ignores messages that arent commands
+            if (!messageReceived.getContent().equalsIgnoreCase("!newletter"))
+                return;
+
+            if (!messageReceived.getContent().toLowerCase().startsWith("!time"))
+                return;
+
+            if (!messageReceived.getContent().toLowerCase().startsWith("!categories"))
+                return;
+
+            // Checks if command was "!time"
+            if (messageReceived.getContent().toLowerCase().startsWith("!time") && isInt(messageReceived.getContent().split(" ")[1])) {
+                gameTime.set(Integer.parseInt(messageReceived.getContent().split(" ")[1]));
+
+            // Checks if command was "!newletter"
+            } else if (messageReceived.getContent().toLowerCase().startsWith("!newletter")) {
+                String currentLetter = letter.get().toLowerCase();
+                letter.set(newLetter("abcdefghijklmnoprstw").replaceAll(currentLetter, ""));
+
+            } else if (messageReceived.getContent().toLowerCase().startsWith("!categories")) {
+                int num = Integer.parseInt(messageReceived.getContent().split(" ")[1]);
+                atomCategoryCount.set(num);
+            }
+            // Resend message to game creator
+            embedToCreator.removeAllFields();
+            embedToCreator.addField("Change Letter", "Type \"!newletter\" to change the letter. The current letter is **" + letter.get().toUpperCase() + "**.");
+            embedToCreator.addField("Change Category Count", "You can change the amount of categories by typing \"!categories <number>\". The game will have **" + atomCategoryCount.get() + "** categories.");
             embedToCreator.addField("Change Time Length", "Type \"!time <seconds>\" to change the length of the game. The current length is **" + gameTime.get() + "** seconds.");
             embedToCreator.addField("Starting a Game", "You can start a game by typing \"!start\".");
             embedToCreator.addField("Stopping a Game", "You can stop a game by typing \"!stop\".");
             embedToCreator.setThumbnail(images.get(letter.get().toLowerCase()).toString());
-            embedToCreator.setColor(embedColor);
+            setupMessage.edit(embedToCreator).join();
+        }).removeAfter(secondsUntilStart, TimeUnit.SECONDS);
 
-            Message setupMessage = creator.sendMessage(embedToCreator).join();
+        // Counts down until start, once finished it gets all people who reacted to the original message
+        players = countdownToStart(firstMessage, setupMessage, secondsUntilStart);
 
-            int secondsUntilStart = 30;
+        categoryCount = atomCategoryCount.get();
 
-
-            AtomicInteger atomCategoryCount = new AtomicInteger(categoryCount);
-            // Admin settings message create listener
-            api.addMessageCreateListener(messageCreateEvent -> {
-                if (!waitingForPlayers.get()) {
-                    return;
-                }
-
-                Message messageReceived = messageCreateEvent.getMessage();
-                if (!messageReceived.getChannel().asPrivateChannel().isPresent()) {
-                    return;
-                }
-
-                if (!creator.equals(messageCreateEvent.getMessageAuthor().asUser().get())) {
-                    return;
-                }
-
-                // Starts the game by setting waitingForPlayers to false
-                if (messageReceived.getContent().equalsIgnoreCase("!start")) {
-                    waitingForPlayers.set(false);
-                }
-
-                if (!messageReceived.getContent().equalsIgnoreCase("!newletter") && !messageReceived.getContent().toLowerCase().startsWith("!time") && !messageReceived.getContent().toLowerCase().startsWith("!categories")) {
-                    return;
-                }
-
-                // Checks if command was "!time"
-                if (messageReceived.getContent().startsWith("!time") && isInt(messageReceived.getContent().split(" ")[1])) {
-                    gameTime.set(Integer.parseInt(messageReceived.getContent().split(" ")[1]));
-                    // Checks if command was "!newletter"
-                } else if (messageReceived.getContent().startsWith("!newletter")) {
-                    String currentLetter = letter.get().toLowerCase();
-                    do {
-                        letter.set(newLetter("abcdefghijklmnoprstw"));
-                    } while (letter.get().toLowerCase() == currentLetter);
-
-                } else if (messageReceived.getContent().toLowerCase().startsWith("!categories")) {
-                    int num = Integer.parseInt(messageReceived.getContent().split(" ")[1]);
-                    atomCategoryCount.set(num);
-                }
-                // Resend message to game creator
-                embedToCreator.removeAllFields();
-                embedToCreator.addField("Change Letter", "Type \"!newletter\" to change the letter. The current letter is **" + letter.get().toUpperCase() + "**.");
-                embedToCreator.addField("Change Category Count", "You can change the amount of categories by typing \"!categories <number>\". The game will have **" + atomCategoryCount.get() + "** categories.");
-                embedToCreator.addField("Change Time Length", "Type \"!time <seconds>\" to change the length of the game. The current length is **" + gameTime.get() + "** seconds.");
-                embedToCreator.addField("Starting a Game", "You can start a game by typing \"!start\".");
-                embedToCreator.addField("Stopping a Game", "You can stop a game by typing \"!stop\".");
-                embedToCreator.setThumbnail(images.get(letter.get().toLowerCase()).toString());
-                setupMessage.edit(embedToCreator).join();
-            }).removeAfter(secondsUntilStart, TimeUnit.SECONDS);
-
-            // Counts down until start, once finished it gets all people who reacted to the original message
-            players = countdownToStart(firstMessage, setupMessage, secondsUntilStart);
-
-            categoryCount = atomCategoryCount.get();
-            // Generate letters, categories
-            ArrayList<String> categories = new ArrayList();
-
+        // Generate letters, categories
+        ArrayList<String> categories = new ArrayList();
+        JSONArray allCategories;
+        try {
             FileReader reader = new FileReader("categories.json");
             JSONParser parser = new JSONParser();
-            JSONArray allCategories = (JSONArray)parser.parse(reader);
+            allCategories = (JSONArray)parser.parse(reader);
+        } catch (IOException | ParseException e) {
+            e.printStackTrace();
+            channel.sendMessage("Categories.json was not found. The game has been cancelled.");
+            return;
+        }
 
-            for (int i = 0; i < categoryCount; i++) {
-                int index = rand.nextInt(allCategories.size());
+        // Select all the categories from categories.json
+        for (int i = 0; i < categoryCount; i++) {
+            int index = rand.nextInt(allCategories.size());
 
-                Object category = allCategories.get(index);
-                categories.add((String) category);
-                allCategories.remove(category);
+            Object category = allCategories.get(index);
+            categories.add((String) category);
+            allCategories.remove(category);
+        }
+
+
+        // Stop if only one player joined
+        if (players.size() <= 1) {
+            firstMessage.delete().join();
+            return;
+        }
+
+        // Stop if more than 6 players joined
+        if (players.size() >= 6) {
+            firstMessage.delete().join();
+            return;
+        }
+
+        // Setting up answers Hashmap
+        for (int i = 0; i < players.size(); i++) {
+            User u = players.get(i);
+            ArrayList<String> blanks = new ArrayList<>();
+            for (int j = 0; j < categoryCount; j++) {
+                blanks.add("");
             }
+            answers.put(u, blanks);
+        }
+
+        EmbedBuilder categoryEmbed = new EmbedBuilder();
 
 
-            // Stop if only one player joined
-            if (players.size() <= 1) {
-                firstMessage.delete().join();
-                return;
-            }
+        StringBuilder categoryMessageBuilder = new StringBuilder();
 
-            // Stop if more than 6 players joined
-            if (players.size() >= 6) {
-                firstMessage.delete().join();
-                return;
-            }
+        // Create the categories message
+        for (int i = 0; i < categories.size(); i++) {
+            categoryMessageBuilder.append((i + 1) + ". " + categories.get(i) + "\n");
+        }
 
-            // Setting up answers Hashmap
-            for (int i = 0; i < players.size(); i++) {
-                User u = players.get(i);
-                ArrayList<String> blanks = new ArrayList<>();
-                for (int j = 0; j < categoryCount; j++) {
-                    blanks.add("");
-                }
-                answers.put(u, blanks);
-            }
+        categoryEmbed.setTitle("Scattergories");
+        categoryEmbed.addField("Categories", categoryMessageBuilder.toString());
+        categoryEmbed.addField("How to Answer", "To answer, type <number>. <answer>. For example, \"7. Answer\".");
 
-            EmbedBuilder categoryEmbed = new EmbedBuilder();
+        letterIMGLink = images.get(letter.get().toLowerCase()).toString();
+        categoryEmbed.setThumbnail(letterIMGLink);
 
+        categoryEmbed.setColor(embedColor);
 
-            StringBuilder categoryMessageBuilder = new StringBuilder();
+        // Set up the messages hashmap
+        for (int i = 0; i < players.size(); i++) {
+            messages.put(players.get(i), players.get(i).sendMessage(categoryEmbed).join());
+        }
 
-            // Create the categories message
-            for (int i = 0; i < categories.size(); i++) {
-                categoryMessageBuilder.append((i + 1) + ". " + categories.get(i) + "\n");
-            }
+        // Event handler for adding answers for each category
+        // User provided a number
+        // Make sure number is 1-12
 
-            categoryEmbed.setTitle("Scattergories");
-            categoryEmbed.addField("Categories", categoryMessageBuilder.toString());
-            categoryEmbed.addField("How to Answer", "To answer, type <number>. <answer>. For example, \"7. Answer\".");
-
-            letterIMGLink = images.get(letter.get().toLowerCase()).toString();
-            categoryEmbed.setThumbnail(letterIMGLink);
-
-            categoryEmbed.setColor(embedColor);
-
-            // Set up the messages hashmap
-            for (int i = 0; i < players.size(); i++) {
-                messages.put(players.get(i), players.get(i).sendMessage(categoryEmbed).join());
-            }
-
-            // Event handler for adding answers for each category
-            // User provided a number
-            // Make sure number is 1-12
-
-            ListenerManager<MessageCreateListener> messageHandler = api.addMessageCreateListener(messageCreateEvent -> {
-                if (!running.get()) {
-                    return;
-                }
-
-                if (messageCreateEvent.getMessageAuthor().asUser().get().getIdAsString().equals(creator.getIdAsString()) && messageCreateEvent.getMessage().getContent().equalsIgnoreCase("!stop")) {
-                    running.set(false);
-                }
-
-                try {
-                    Message userSentMsg = messageCreateEvent.getMessage();
-
-                    if (!players.contains(userSentMsg.getAuthor().asUser().get()) || !userSentMsg.getChannel().asPrivateChannel().isPresent()) {
-                        return;
-                    }
-
-                    // User provided a number
-                    if (!isInt(userSentMsg.getReadableContent().split("[.]")[0])) {
-                        return;
-                    }
-
-                    User user = messageCreateEvent.getChannel().asPrivateChannel().get().getRecipient().get();
-
-                    int categoryNumber = Integer.parseInt(userSentMsg.getReadableContent().split("[.]")[0]);
-                    String categoryAnswer = userSentMsg.getReadableContent().replaceFirst(userSentMsg.getReadableContent().split("[.]")[0], "").substring(1);
-
-                    // Make sure answer is between 0-100 characters
-                    if (categoryAnswer.length() == 0 || categoryAnswer.length() > 100) {
-                        user.sendMessage("Answer must be between 1 and 100 characters long.");
-                        return;
-                    }
-
-                    // Make sure number is 1-12
-                    if (categoryNumber < 0 || categoryNumber > categoryCount + 1) {
-                        return;
-                    }
-
-                    // Remove spaces before the answer
-                    while (categoryAnswer.startsWith(" ")) {
-                        categoryAnswer = categoryAnswer.substring(1);
-                    }
-
-                    if (!categoryAnswer.toLowerCase().startsWith(letter.get())) {
-                        user.sendMessage("That doesn't start with the letter **" + letter + "**!");
-                        return;
-                    }
-
-                    ArrayList<String> lowercaseAnswers = new ArrayList<>();
-                    for (String s : answers.get(user)) {
-                        lowercaseAnswers.add(s.toLowerCase());
-                    }
-
-                    if (lowercaseAnswers.contains(categoryAnswer.toLowerCase())) {
-                        user.sendMessage("You've already used this answer!");
-                        return;
-                    }
-
-                    answers.get(user).set(categoryNumber - 1, categoryAnswer);
-
-
-                    Message botSentMessage = messages.get(messageCreateEvent.getChannel().asPrivateChannel().get().getRecipient().get());
-
-
-                    EmbedBuilder sendingEmbed = new EmbedBuilder();
-                    sendingEmbed.setTitle("Scattergories");
-                    sendingEmbed.setColor(embedColor);
-                    sendingEmbed.setThumbnail(letterIMGLink);
-                    sendingEmbed.setFooter(botSentMessage.getEmbeds().get(0).getFooter().get().getText().get());
-
-                    String userCategories = botSentMessage.getEmbeds().get(0).getFields().get(0).getValue();
-
-                    StringBuilder newCategoryMessageBuilder = new StringBuilder();
-                    // Update categories message with new answer
-                    int userAnswerCount = 0;
-                    for (int i = 0; i < userCategories.split("\n").length; i++) {
-                        if (i + 1 == categoryNumber) {
-                            newCategoryMessageBuilder.append((i + 1) + ". " + categories.get(i) + " **" + categoryAnswer + "**\n");
-                            userAnswerCount++;
-                            continue;
-                        }
-
-                        String category = userCategories.split("\n")[i] + "\n";
-                        newCategoryMessageBuilder.append(category);
-                        if (category.contains("**")) {
-                            userAnswerCount++;
-                        }
-                    }
-
-                    sendingEmbed.addField("Categories (" + userAnswerCount + " / " + categoryCount + ")", newCategoryMessageBuilder.toString());
-
-                    sendingEmbed.addField(botSentMessage.getEmbeds().get(0).getFields().get(1).getName(), botSentMessage.getEmbeds().get(0).getFields().get(1).getValue());
-
-                    Message latestMessage = user.sendMessage(sendingEmbed).join();
-                    botSentMessage.delete();
-
-                    messages.put(messageCreateEvent.getChannel().asPrivateChannel().get().getRecipient().get(), latestMessage);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }).removeAfter(gameTime.get() + 100, TimeUnit.SECONDS);
-
-
-            countdownToEnd(gameTime.get());
-            messageHandler.remove();
-
+        ListenerManager<MessageCreateListener> messageHandler = api.addMessageCreateListener(messageCreateEvent -> {
             if (!running.get()) {
                 return;
             }
-            // Checks if there are answer users with no answers
-            // Removes player if they didn't answer (AFK player)
 
-            ArrayList<Object> AFKUsers = new ArrayList();
-            for (Object key : answers.keySet()) {
-                ArrayList<String> a = answers.get(key);
-
-                StringBuilder emptyChecker = new StringBuilder();
-                for (int i = 0; i < a.size(); i++) {
-                    emptyChecker.append(a.get(i));
-                }
-                if (emptyChecker.toString().length() == 0) {
-                    AFKUsers.add(key);
-                }
-            }
-            for (int i = 0; i < AFKUsers.size(); i++) {
-                answers.remove(AFKUsers.get(i));
-                players.remove(AFKUsers.get(i));
+            if (messageCreateEvent.getMessageAuthor().asUser().get().getIdAsString().equals(creator.getIdAsString()) && messageCreateEvent.getMessage().getContent().equalsIgnoreCase("!stop")) {
+                running.set(false);
             }
 
+            try {
+                Message userSentMsg = messageCreateEvent.getMessage();
+
+                if (!players.contains(userSentMsg.getAuthor().asUser().get()) || !userSentMsg.getChannel().asPrivateChannel().isPresent()) {
+                    return;
+                }
+
+                // User provided a number
+                if (!isInt(userSentMsg.getReadableContent().split("[.]")[0])) {
+                    return;
+                }
+
+                User user = messageCreateEvent.getChannel().asPrivateChannel().get().getRecipient().get();
+
+                int categoryNumber = Integer.parseInt(userSentMsg.getReadableContent().split("[.]")[0]);
+                String categoryAnswer = userSentMsg.getReadableContent().replaceFirst(userSentMsg.getReadableContent().split("[.]")[0], "").substring(1);
+
+                // Make sure answer is between 0-100 characters
+                if (categoryAnswer.length() == 0 || categoryAnswer.length() > 100) {
+                    user.sendMessage("Answer must be between 1 and 100 characters long.");
+                    return;
+                }
+
+                // Make sure number is 1-12
+                if (categoryNumber < 0 || categoryNumber > categoryCount + 1) {
+                    return;
+                }
+
+                // Remove spaces before the answer
+                while (categoryAnswer.startsWith(" ")) {
+                    categoryAnswer = categoryAnswer.substring(1);
+                }
+
+                if (!categoryAnswer.toLowerCase().startsWith(letter.get())) {
+                    user.sendMessage("That doesn't start with the letter **" + letter + "**!");
+                    return;
+                }
+
+                ArrayList<String> lowercaseAnswers = new ArrayList<>();
+                for (String s : answers.get(user)) {
+                    lowercaseAnswers.add(s.toLowerCase());
+                }
+
+                if (lowercaseAnswers.contains(categoryAnswer.toLowerCase())) {
+                    user.sendMessage("You've already used this answer!");
+                    return;
+                }
+
+                answers.get(user).set(categoryNumber - 1, categoryAnswer);
 
 
+                Message botSentMessage = messages.get(messageCreateEvent.getChannel().asPrivateChannel().get().getRecipient().get());
 
-            // Iterate through all categories
-            // Store them in answersByRound ArrayList of User,String HashMaps
-            ArrayList<HashMap<User, String>> answersByRound = new ArrayList();
-            for (int i = 0; i < categoryCount; i++) {
-                HashMap<User, String> currentAnswers = new HashMap<>();
-                for (Object key : answers.keySet()) {
-                    if (answers.get(key).get(i).length() > 0) {
-                        currentAnswers.put((User) key, answers.get(key).get(i));
+
+                EmbedBuilder sendingEmbed = new EmbedBuilder();
+                sendingEmbed.setTitle("Scattergories");
+                sendingEmbed.setColor(embedColor);
+                sendingEmbed.setThumbnail(letterIMGLink);
+                sendingEmbed.setFooter(botSentMessage.getEmbeds().get(0).getFooter().get().getText().get());
+
+                String userCategories = botSentMessage.getEmbeds().get(0).getFields().get(0).getValue();
+
+                StringBuilder newCategoryMessageBuilder = new StringBuilder();
+                // Update categories message with new answer
+                int userAnswerCount = 0;
+                for (int i = 0; i < userCategories.split("\n").length; i++) {
+                    if (i + 1 == categoryNumber) {
+                        newCategoryMessageBuilder.append((i + 1) + ". " + categories.get(i) + " **" + categoryAnswer + "**\n");
+                        userAnswerCount++;
+                        continue;
+                    }
+
+                    String category = userCategories.split("\n")[i] + "\n";
+                    newCategoryMessageBuilder.append(category);
+                    if (category.contains("**")) {
+                        userAnswerCount++;
                     }
                 }
-                answersByRound.add(currentAnswers);
+
+                sendingEmbed.addField("Categories (" + userAnswerCount + " / " + categoryCount + ")", newCategoryMessageBuilder.toString());
+
+                sendingEmbed.addField(botSentMessage.getEmbeds().get(0).getFields().get(1).getName(), botSentMessage.getEmbeds().get(0).getFields().get(1).getValue());
+
+                Message latestMessage = user.sendMessage(sendingEmbed).join();
+                botSentMessage.delete();
+
+                messages.put(messageCreateEvent.getChannel().asPrivateChannel().get().getRecipient().get(), latestMessage);
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-
-            // If there's an empty answer, it is set to null
-            for (int i = 0; i < answersByRound.size(); i++) {
-                StringBuilder testForAnswers = new StringBuilder();
-                for (Object key : answersByRound.get(i).keySet()) {
-                    testForAnswers.append(answersByRound.get(i).get(key));
-                }
-                if (testForAnswers.toString().length() == 0) {
-                    answersByRound.set(i, null);
-                }
-            }
+        }).removeAfter(gameTime.get() + 100, TimeUnit.SECONDS);
 
 
-            // Ends the game if there is one or less players
-            if (players.size() == 0) {
-                return;
-            }
+        countdownToEnd(gameTime.get());
+        messageHandler.remove();
 
-            if (players.size() == 1) {
-                int points = 0;
-                for (int i = 0; i < answersByRound.size(); i++) {
-                    if (answersByRound.get(i) != null) {
-                        points++;
-                    }
-                }
-
-                EmbedBuilder em = new EmbedBuilder();
-                em.setTitle("Scattergories");
-                em.setDescription("You are the only non-AFK player left, so you win by default!\n\n" +
-                        "You had " + points + " points!");
-                em.setThumbnail(images.get("winner").toString());
-                em.setColor(embedColor);
-                em.setFooter("Thanks for playing!");
-                players.get(0).sendMessage(em);
-                return;
-            }
-
-
-            // Lets the user know that the answering period has ended
-            EmbedBuilder answersDoneBuilder = new EmbedBuilder()
-                    .setColor(embedColor)
-                    .setTitle("Scattergories")
-                    .setDescription("Time's up! Please return to <#" + channel.getIdAsString() + "> to compare answers.")
-                    .setFooter("Thanks for submitting your answers!")
-                    .setThumbnail(images.get("scat-logo"));
-            // Send to all players
-            for (int i = 0; i < players.size(); i++) {
-                players.get(i).sendMessage(answersDoneBuilder);
-            }
-
-            // Set up points HashMap
-            HashMap<User, Integer> points = new HashMap();
-            for (int i = 0; i < players.size(); i++) {
-                points.put(players.get(i), 0);
-            }
-
-            // Go through all answers by round
-            for (int i = 0; i < answersByRound.size(); i++) {
-                EmbedBuilder roundEmbed = new EmbedBuilder();
-                roundEmbed.setColor(embedColor);
-                roundEmbed.setTitle("Scattergories");
-                roundEmbed.setDescription("Round **" + (i + 1) + "**\n" + categories.get(i));
-                roundEmbed.setThumbnail(letterIMGLink);
-
-                HashMap<User, String> round = answersByRound.get(i);
-                HashMap<Message, User> msgs = new HashMap<>();
-
-                // Round with no answers
-                if (round == null) {
-                    roundEmbed.setDescription("Round **" + (i + 1) + "**\n" + categories.get(i) + "\n\nThere were no answers!");
-                    msgs.put(channel.sendMessage(roundEmbed).join(), null);
-                    countDownRounds(msgs, 10, players);
-                    continue;
-
-                }
-
-                // Round with at least one answer
-                HashMap<Message, User> messageToSubmitter = new HashMap();
-
-
-                msgs.put(channel.sendMessage(roundEmbed).join(), null);
-                // Send all user-submitted answers
-                for (Object key : answersByRound.get(i).keySet()) {
-                    User submitter = (User) key;
-                    Message m = channel.sendMessage(submitter.getName() + ": " + answersByRound.get(i).get(key)).join();
-                    messageToSubmitter.put(m, submitter);
-                    m.addReaction("✅");
-                    m.addReaction("❌");
-                    msgs.put(m, (User) key);
-                }
-
-
-                HashMap<User, HashMap<String, Integer>> roundPoints = countDownRounds(msgs, 60, players);
-
-
-                StringBuilder resultsBuilder = new StringBuilder();
-
-                // Go through each answer, determine if it is accepted or rejected
-                for (Object key : roundPoints.keySet()) {
-                    HashMap<String, Integer> currentPoints = roundPoints.get(key);
-
-                    User u = (User) key;
-                    resultsBuilder.append(u.getName());
-                    int yesVoteCount = currentPoints.get("yes");
-                    int noVoteCount = currentPoints.get("no");
-                    resultsBuilder.append(" (" + yesVoteCount + " yes / " + noVoteCount + " no)");
-                    // More yes than no
-                    if (yesVoteCount > noVoteCount) {
-                        points.put(u, points.get(u) + 1);
-                        resultsBuilder.append(" ✅");
-                        // More no than yes, or same amount
-                    } else if (yesVoteCount <= noVoteCount) {
-                        // User didn't get any points
-                        resultsBuilder.append(" ❌");
-                    }
-                    resultsBuilder.append("\n");
-                }
-
-
-                // Show results for each answer
-                for (Object key : msgs.keySet()) {
-                    Message m = (Message) key;
-                    if (!m.getEmbeds().isEmpty()) {
-                        EmbedBuilder em = m.getEmbeds().get(0).toBuilder();
-                        em.addField("Results", resultsBuilder.toString());
-                        m.edit(em);
-                    }
-                }
-            }
-
-            // Set up rankings message
-            EmbedBuilder rankingsBuilder = new EmbedBuilder()
-                    .setTitle("Scattergories")
-                    .setFooter("Thanks for playing!");
-
-            LinkedHashMap<User, Integer> rankingsMap = new LinkedHashMap<>();
-            for (Object key : points.keySet()) {
-                User u = (User) key;
-                rankingsMap.put(u, Integer.parseInt(points.get(key).toString()));
-            }
-
-            // Sort the LinkedHashMap
-            List<Map.Entry<User, Integer>> entries = new ArrayList<Map.Entry<User, Integer>>( rankingsMap.entrySet() );
-            Collections.sort(entries, new Comparator<Map.Entry<User, Integer>>(){
-
-                public int compare(Map.Entry<User, Integer> entry1, Map.Entry<User, Integer> entry2) {
-                    return entry1.getValue() - entry2.getValue();
-                }
-
-            });
-
-
-            rankingsMap.clear();
-            for(Map.Entry<User, Integer> entry : entries) {
-                rankingsMap.put(entry.getKey(), entry.getValue());
-            }
-
-
-            List<User> reverseOrderedKeys = new ArrayList<User>(rankingsMap.keySet());
-            Collections.reverse(reverseOrderedKeys);
-
-
-
-            StringBuilder rankingsString = new StringBuilder();
-            int j = 0;
-            for (int i = 0; i < reverseOrderedKeys.size(); i++) {
-                String pointOrPoints = "";
-                // Makes sure the bot doesn't say "1 points"
-                if (points.get(reverseOrderedKeys.get(i)) == 1) {
-                    pointOrPoints = "point";
-                } else {
-                    pointOrPoints = "points";
-                }
-
-                // Puts score for the first user
-                if (i == 0) {
-                    rankingsString.append((j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
-
-                    // Current person has same amount of points as previous person (tie)
-                } else if (points.get(reverseOrderedKeys.get(i - 1)) == points.get(reverseOrderedKeys.get(i))) {
-                    rankingsString.append(", " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
-                    continue;
-
-                    // Puts score for users
-                } else {
-                    rankingsString.append("\n" + (j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
-                }
-                j++;
-            }
-
-            rankingsBuilder.addField("Rankings", rankingsString.toString());
-            rankingsBuilder.setColor(embedColor);
-            rankingsBuilder.setThumbnail(images.get("scat-logo").toString());
-
-            channel.sendMessage(rankingsBuilder);
-
-
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            channel.sendMessage("There was a major error: " + e.getMessage());
+        if (!running.get()) {
+            return;
         }
+        // Checks if there are answer users with no answers
+        // Removes player if they didn't answer (AFK player)
+
+        ArrayList<Object> AFKUsers = new ArrayList();
+        for (Object key : answers.keySet()) {
+            ArrayList<String> a = answers.get(key);
+
+            StringBuilder emptyChecker = new StringBuilder();
+            for (int i = 0; i < a.size(); i++) {
+                emptyChecker.append(a.get(i));
+            }
+            if (emptyChecker.toString().length() == 0) {
+                AFKUsers.add(key);
+            }
+        }
+        for (int i = 0; i < AFKUsers.size(); i++) {
+            answers.remove(AFKUsers.get(i));
+            players.remove(AFKUsers.get(i));
+        }
+
+
+
+
+        // Iterate through all categories
+        // Store them in answersByRound ArrayList of User,String HashMaps
+        ArrayList<HashMap<User, String>> answersByRound = new ArrayList();
+        for (int i = 0; i < categoryCount; i++) {
+            HashMap<User, String> currentAnswers = new HashMap<>();
+            for (Object key : answers.keySet()) {
+                if (answers.get(key).get(i).length() > 0) {
+                    currentAnswers.put((User) key, answers.get(key).get(i));
+                }
+            }
+            answersByRound.add(currentAnswers);
+        }
+
+        // If there's an empty answer, it is set to null
+        for (int i = 0; i < answersByRound.size(); i++) {
+            StringBuilder testForAnswers = new StringBuilder();
+            for (Object key : answersByRound.get(i).keySet()) {
+                testForAnswers.append(answersByRound.get(i).get(key));
+            }
+            if (testForAnswers.toString().length() == 0) {
+                answersByRound.set(i, null);
+            }
+        }
+
+
+        // Ends the game if there is one or less players
+        if (players.size() == 0) {
+            return;
+        }
+
+        if (players.size() == 1) {
+            int points = 0;
+            for (int i = 0; i < answersByRound.size(); i++) {
+                if (answersByRound.get(i) != null) {
+                    points++;
+                }
+            }
+
+            EmbedBuilder em = new EmbedBuilder();
+            em.setTitle("Scattergories");
+            em.setDescription("You are the only non-AFK player left, so you win by default!\n\n" +
+                    "You had " + points + " points!");
+            em.setThumbnail(images.get("winner").toString());
+            em.setColor(embedColor);
+            em.setFooter("Thanks for playing!");
+            players.get(0).sendMessage(em);
+            return;
+        }
+
+
+        // Lets the user know that the answering period has ended
+        EmbedBuilder answersDoneBuilder = new EmbedBuilder()
+                .setColor(embedColor)
+                .setTitle("Scattergories")
+                .setDescription("Time's up! Please return to <#" + channel.getIdAsString() + "> to compare answers.")
+                .setFooter("Thanks for submitting your answers!")
+                .setThumbnail(images.get("scat-logo"));
+        // Send to all players
+        for (int i = 0; i < players.size(); i++) {
+            players.get(i).sendMessage(answersDoneBuilder);
+        }
+
+        // Set up points HashMap
+        HashMap<User, Integer> points = new HashMap();
+        for (int i = 0; i < players.size(); i++) {
+            points.put(players.get(i), 0);
+        }
+
+        // Go through all answers by round
+        for (int i = 0; i < answersByRound.size(); i++) {
+            EmbedBuilder roundEmbed = new EmbedBuilder();
+            roundEmbed.setColor(embedColor);
+            roundEmbed.setTitle("Scattergories");
+            roundEmbed.setDescription("Round **" + (i + 1) + "**\n" + categories.get(i));
+            roundEmbed.setThumbnail(letterIMGLink);
+
+            HashMap<User, String> round = answersByRound.get(i);
+            HashMap<Message, User> msgs = new HashMap<>();
+
+            // Round with no answers
+            if (round == null) {
+                roundEmbed.setDescription("Round **" + (i + 1) + "**\n" + categories.get(i) + "\n\nThere were no answers!");
+                msgs.put(channel.sendMessage(roundEmbed).join(), null);
+                countDownRounds(msgs, 10, players);
+                continue;
+
+            }
+
+            // Round with at least one answer
+            HashMap<Message, User> messageToSubmitter = new HashMap();
+
+
+            msgs.put(channel.sendMessage(roundEmbed).join(), null);
+            // Send all user-submitted answers
+            for (Object key : answersByRound.get(i).keySet()) {
+                User submitter = (User) key;
+                Message m = channel.sendMessage(submitter.getName() + ": " + answersByRound.get(i).get(key)).join();
+                messageToSubmitter.put(m, submitter);
+                m.addReaction("✅");
+                m.addReaction("❌");
+                msgs.put(m, (User) key);
+            }
+
+
+            HashMap<User, HashMap<String, Integer>> roundPoints = countDownRounds(msgs, 60, players);
+
+
+            StringBuilder resultsBuilder = new StringBuilder();
+
+            // Go through each answer, determine if it is accepted or rejected
+            for (Object key : roundPoints.keySet()) {
+                HashMap<String, Integer> currentPoints = roundPoints.get(key);
+
+                User u = (User) key;
+                resultsBuilder.append(u.getName());
+                int yesVoteCount = currentPoints.get("yes");
+                int noVoteCount = currentPoints.get("no");
+                resultsBuilder.append(" (" + yesVoteCount + " yes / " + noVoteCount + " no)");
+                // More yes than no
+                if (yesVoteCount > noVoteCount) {
+                    points.put(u, points.get(u) + 1);
+                    resultsBuilder.append(" ✅");
+                    // More no than yes, or same amount
+                } else if (yesVoteCount <= noVoteCount) {
+                    // User didn't get any points
+                    resultsBuilder.append(" ❌");
+                }
+                resultsBuilder.append("\n");
+            }
+
+
+            // Show results for each answer
+            for (Object key : msgs.keySet()) {
+                Message m = (Message) key;
+                if (!m.getEmbeds().isEmpty()) {
+                    EmbedBuilder em = m.getEmbeds().get(0).toBuilder();
+                    em.addField("Results", resultsBuilder.toString());
+                    m.edit(em);
+                }
+            }
+        }
+
+        // Set up rankings message
+        EmbedBuilder rankingsBuilder = new EmbedBuilder()
+                .setTitle("Scattergories")
+                .setFooter("Thanks for playing!");
+
+        LinkedHashMap<User, Integer> rankingsMap = new LinkedHashMap<>();
+        for (Object key : points.keySet()) {
+            User u = (User) key;
+            rankingsMap.put(u, Integer.parseInt(points.get(key).toString()));
+        }
+
+        // Sort the LinkedHashMap
+        List<Map.Entry<User, Integer>> entries = new ArrayList<Map.Entry<User, Integer>>( rankingsMap.entrySet() );
+        Collections.sort(entries, new Comparator<Map.Entry<User, Integer>>(){
+
+            public int compare(Map.Entry<User, Integer> entry1, Map.Entry<User, Integer> entry2) {
+                return entry1.getValue() - entry2.getValue();
+            }
+
+        });
+
+
+        rankingsMap.clear();
+        for(Map.Entry<User, Integer> entry : entries) {
+            rankingsMap.put(entry.getKey(), entry.getValue());
+        }
+
+
+        List<User> reverseOrderedKeys = new ArrayList<User>(rankingsMap.keySet());
+        Collections.reverse(reverseOrderedKeys);
+
+
+
+        StringBuilder rankingsString = new StringBuilder();
+        int j = 0;
+        for (int i = 0; i < reverseOrderedKeys.size(); i++) {
+            String pointOrPoints = "";
+            // Makes sure the bot doesn't say "1 points"
+            if (points.get(reverseOrderedKeys.get(i)) == 1) {
+                pointOrPoints = "point";
+            } else {
+                pointOrPoints = "points";
+            }
+
+            // Puts score for the first user
+            if (i == 0) {
+                rankingsString.append((j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
+
+                // Current person has same amount of points as previous person (tie)
+            } else if (points.get(reverseOrderedKeys.get(i - 1)) == points.get(reverseOrderedKeys.get(i))) {
+                rankingsString.append(", " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
+                continue;
+
+                // Puts score for users
+            } else {
+                rankingsString.append("\n" + (j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
+            }
+            j++;
+        }
+
+        rankingsBuilder.addField("Rankings", rankingsString.toString());
+        rankingsBuilder.setColor(embedColor);
+        rankingsBuilder.setThumbnail(images.get("scat-logo").toString());
+
+        channel.sendMessage(rankingsBuilder);
     }
 
     private static boolean isInt(String s) {
