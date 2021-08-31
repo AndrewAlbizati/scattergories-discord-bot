@@ -20,5 +20,5 @@ To add answers, each player will need to message the bot something like this: "1
 After the answering round has ended (by default 240 seconds), each player will need to return to the channel which the original command was issued. The bot will send the category, letter, and the answers that players submitted. The players react to each individual answer with ✅ to approve it or ❌ to reject it. In the event of a tie, the answer is rejected. Each of these rounds can last at most 60 seconds. 
 
 ## Dependencies
-- Javacord 3.3.0 (https://github.com/Javacord/Javacord)
+- Javacord 3.3.2 (https://github.com/Javacord/Javacord)
 - JSON-Simple 1.1.1 (https://github.com/fangyidong/json-simple)
