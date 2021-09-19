@@ -1,4 +1,7 @@
-/out
-/.idea
+/out/
+/.idea/
+.gradle
+/build/
 *.iml
 .DS_Store
+token.txt
