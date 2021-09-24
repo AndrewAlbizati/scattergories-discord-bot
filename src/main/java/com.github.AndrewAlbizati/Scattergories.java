@@ -31,6 +31,7 @@ public class Scattergories extends Thread {
     private int categoryCount = 12;
     private String letterIMGLink; // Link to an image to the letter chosen. This can change if the game creator wants to change it
     private ArrayList<User> players = new ArrayList(); // List of all players who reacted with thumbs up to original message
+    private int maxPlayers = 6;
 
     private AtomicBoolean running = new AtomicBoolean(true); // AtomicBoolean to know if the game has ended or not. The game ends if the creator types !stop
     private AtomicBoolean waitingForPlayers = new AtomicBoolean(true); // AtomicBoolean to know if the game has started or not. Game starts when creator types !start
@@ -69,13 +70,6 @@ public class Scattergories extends Thread {
         if (channel.asPrivateChannel().isPresent()) {
             return;
         }
-
-        messages.clear();
-        answers.clear();
-        players.clear();
-        running.set(true);
-        waitingForPlayers.set(true);
-
 
         User creator = message.getAuthor().asUser().get();
 
@@ -123,7 +117,7 @@ public class Scattergories extends Thread {
 
             Message messageReceived = messageCreateEvent.getMessage();
 
-            // Message is sent in a DM
+            // Message must be sent in a DM
             if (!messageReceived.getChannel().asPrivateChannel().isPresent())
                 return;
 
@@ -136,13 +130,7 @@ public class Scattergories extends Thread {
                 waitingForPlayers.set(false);
 
             // Ignores messages that arent commands
-            if (!messageReceived.getContent().equalsIgnoreCase("!newletter"))
-                return;
-
-            if (!messageReceived.getContent().toLowerCase().startsWith("!time"))
-                return;
-
-            if (!messageReceived.getContent().toLowerCase().startsWith("!categories"))
+            if (!messageReceived.getContent().equalsIgnoreCase("!newletter") && !messageReceived.getContent().toLowerCase().startsWith("!time") && !messageReceived.getContent().toLowerCase().startsWith("!categories"))
                 return;
 
             // Checks if command was "!time"
@@ -152,7 +140,7 @@ public class Scattergories extends Thread {
             // Checks if command was "!newletter"
             } else if (messageReceived.getContent().toLowerCase().startsWith("!newletter")) {
                 String currentLetter = letter.get().toLowerCase();
-                letter.set(newLetter("abcdefghijklmnoprstw").replaceAll(currentLetter, ""));
+                letter.set(newLetter("abcdefghijklmnoprstw".replaceAll(currentLetter, "")));
 
             } else if (messageReceived.getContent().toLowerCase().startsWith("!categories")) {
                 int num = Integer.parseInt(messageReceived.getContent().split(" ")[1]);
@@ -203,8 +191,8 @@ public class Scattergories extends Thread {
             return;
         }
 
-        // Stop if more than 6 players joined
-        if (players.size() >= 6) {
+        // Stop if more than the max amount of players joined
+        if (players.size() > maxPlayers) {
             firstMessage.delete().join();
             return;
         }
@@ -248,64 +236,63 @@ public class Scattergories extends Thread {
         // Make sure number is 1-12
 
         ListenerManager<MessageCreateListener> messageHandler = api.addMessageCreateListener(messageCreateEvent -> {
-            if (!running.get()) {
+            if (!running.get())
                 return;
-            }
 
-            if (messageCreateEvent.getMessageAuthor().asUser().get().getIdAsString().equals(creator.getIdAsString()) && messageCreateEvent.getMessage().getContent().equalsIgnoreCase("!stop")) {
+            if (messageCreateEvent.getMessageAuthor().asUser().get().getIdAsString().equals(creator.getIdAsString()) && messageCreateEvent.getMessage().getContent().equalsIgnoreCase("!stop"))
                 running.set(false);
-            }
 
             try {
                 Message userSentMsg = messageCreateEvent.getMessage();
 
-                if (!players.contains(userSentMsg.getAuthor().asUser().get()) || !userSentMsg.getChannel().asPrivateChannel().isPresent()) {
+                if (!players.contains(userSentMsg.getAuthor().asUser().get()) || !userSentMsg.getChannel().asPrivateChannel().isPresent())
                     return;
-                }
 
                 // User provided a number
-                if (!isInt(userSentMsg.getReadableContent().split("[.]")[0])) {
+                if (!isInt(userSentMsg.getReadableContent().split("[.]")[0]))
                     return;
-                }
 
                 User user = messageCreateEvent.getChannel().asPrivateChannel().get().getRecipient().get();
+                String[] userSubmittedAnswers = userSentMsg.getReadableContent().split("\n");
+                for (String s : userSubmittedAnswers) {
+                    // User provided a number
+                    if (!isInt(s.split("[.]")[0]))
+                        continue;
 
-                int categoryNumber = Integer.parseInt(userSentMsg.getReadableContent().split("[.]")[0]);
-                String categoryAnswer = userSentMsg.getReadableContent().replaceFirst(userSentMsg.getReadableContent().split("[.]")[0], "").substring(1);
+                    int categoryNumber = Integer.parseInt(s.split("[.]")[0]);
+                    String categoryAnswer = s.replaceFirst(s.split("[.]")[0], "").substring(1);
 
-                // Make sure answer is between 0-100 characters
-                if (categoryAnswer.length() == 0 || categoryAnswer.length() > 100) {
-                    user.sendMessage("Answer must be between 1 and 100 characters long.");
-                    return;
+                    // Make sure answer is between 0-100 characters
+                    if (categoryAnswer.length() == 0 || categoryAnswer.length() > 100) {
+                        user.sendMessage("Answer must be between 1 and 100 characters long.");
+                        continue;
+                    }
+
+                    // Make sure number is 1-12
+                    if (categoryNumber < 0 || categoryNumber > categoryCount + 1)
+                        continue;
+
+                    // Remove spaces before the answer
+                    while (categoryAnswer.startsWith(" "))
+                        categoryAnswer = categoryAnswer.substring(1);
+
+                    if (!categoryAnswer.toLowerCase().startsWith(letter.get())) {
+                        user.sendMessage("That doesn't start with the letter **" + letter + "**!");
+                        continue;
+                    }
+
+                    ArrayList<String> lowercaseAnswers = new ArrayList<>();
+                    for (String answer : answers.get(user)) {
+                        lowercaseAnswers.add(answer.toLowerCase());
+                    }
+
+                    if (lowercaseAnswers.contains(categoryAnswer.toLowerCase())) {
+                        user.sendMessage("You've already used this answer!");
+                        continue;
+                    }
+
+                    answers.get(user).set(categoryNumber - 1, categoryAnswer);
                 }
-
-                // Make sure number is 1-12
-                if (categoryNumber < 0 || categoryNumber > categoryCount + 1) {
-                    return;
-                }
-
-                // Remove spaces before the answer
-                while (categoryAnswer.startsWith(" ")) {
-                    categoryAnswer = categoryAnswer.substring(1);
-                }
-
-                if (!categoryAnswer.toLowerCase().startsWith(letter.get())) {
-                    user.sendMessage("That doesn't start with the letter **" + letter + "**!");
-                    return;
-                }
-
-                ArrayList<String> lowercaseAnswers = new ArrayList<>();
-                for (String s : answers.get(user)) {
-                    lowercaseAnswers.add(s.toLowerCase());
-                }
-
-                if (lowercaseAnswers.contains(categoryAnswer.toLowerCase())) {
-                    user.sendMessage("You've already used this answer!");
-                    return;
-                }
-
-                answers.get(user).set(categoryNumber - 1, categoryAnswer);
-
 
                 Message botSentMessage = messages.get(messageCreateEvent.getChannel().asPrivateChannel().get().getRecipient().get());
 
@@ -322,8 +309,8 @@ public class Scattergories extends Thread {
                 // Update categories message with new answer
                 int userAnswerCount = 0;
                 for (int i = 0; i < userCategories.split("\n").length; i++) {
-                    if (i + 1 == categoryNumber) {
-                        newCategoryMessageBuilder.append((i + 1) + ". " + categories.get(i) + " **" + categoryAnswer + "**\n");
+                    if (i + 1 == categories.size()) {
+                        newCategoryMessageBuilder.append((i + 1) + ". " + categories.get(i) + " **" + answers.get(user).get(i) + "**\n");
                         userAnswerCount++;
                         continue;
                     }
@@ -533,13 +520,7 @@ public class Scattergories extends Thread {
 
         // Sort the LinkedHashMap
         List<Map.Entry<User, Integer>> entries = new ArrayList<Map.Entry<User, Integer>>( rankingsMap.entrySet() );
-        Collections.sort(entries, new Comparator<Map.Entry<User, Integer>>(){
-
-            public int compare(Map.Entry<User, Integer> entry1, Map.Entry<User, Integer> entry2) {
-                return entry1.getValue() - entry2.getValue();
-            }
-
-        });
+        Collections.sort(entries, Comparator.comparingInt(Map.Entry::getValue));
 
 
         rankingsMap.clear();
@@ -556,26 +537,17 @@ public class Scattergories extends Thread {
         StringBuilder rankingsString = new StringBuilder();
         int j = 0;
         for (int i = 0; i < reverseOrderedKeys.size(); i++) {
-            String pointOrPoints = "";
-            // Makes sure the bot doesn't say "1 points"
-            if (points.get(reverseOrderedKeys.get(i)) == 1) {
-                pointOrPoints = "point";
-            } else {
-                pointOrPoints = "points";
-            }
-
             // Puts score for the first user
             if (i == 0) {
-                rankingsString.append((j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
+                rankingsString.append((j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " point" + (points.get(reverseOrderedKeys.get(i)) != 1 ? "s" : "") + ")");
 
                 // Current person has same amount of points as previous person (tie)
             } else if (points.get(reverseOrderedKeys.get(i - 1)) == points.get(reverseOrderedKeys.get(i))) {
-                rankingsString.append(", " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
+                rankingsString.append(", " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " point" + (points.get(reverseOrderedKeys.get(i)) != 1 ? "s" : "") + ")");
                 continue;
-
                 // Puts score for users
             } else {
-                rankingsString.append("\n" + (j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " " + pointOrPoints + ")");
+                rankingsString.append("\n" + (j + 1) + ". " + reverseOrderedKeys.get(i).getName() + " (" + points.get(reverseOrderedKeys.get(i)) + " point" + (points.get(reverseOrderedKeys.get(i)) != 1 ? "s" : "") + ")");
             }
             j++;
         }
@@ -606,6 +578,7 @@ public class Scattergories extends Thread {
         while (secondsUntilStart > 0) {
             players = new ArrayList();
             secondsUntilStart--;
+            secondsUntilStart--;
 
 
             try {
@@ -635,8 +608,8 @@ public class Scattergories extends Thread {
                     StringBuilder b = new StringBuilder();
                     for (int i = 0; i < players.size(); i++) {
                         b.append((i + 1) + ". " + players.get(i).getName() + "\n");
-                        // If there are 7 or more players
-                        if (i >= 6) {
+                        // If there are too many players
+                        if (i > maxPlayers) {
                             break;
                         }
                     }
@@ -656,7 +629,7 @@ public class Scattergories extends Thread {
                 if (!waitingForPlayers.get()) {
                     break;
                 }
-                Thread.sleep(1000);
+                Thread.sleep(2000);
             } catch (Exception e) {
                 e.printStackTrace();
                 m.getChannel().sendMessage("Error: " + e.getMessage());
