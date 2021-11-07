@@ -4,4 +4,4 @@
 /build/
 *.iml
 .DS_Store
-token.txt
+config.properties

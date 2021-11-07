@@ -6,7 +6,8 @@ import org.javacord.api.entity.message.Message;
 import org.javacord.api.entity.message.Reaction;
 import org.javacord.api.entity.message.embed.EmbedBuilder;
 import org.javacord.api.entity.user.User;
-import org.javacord.api.event.message.MessageCreateEvent;
+import org.javacord.api.interaction.SlashCommandInteraction;
+import org.javacord.api.interaction.callback.InteractionOriginalResponseUpdater;
 import org.javacord.api.listener.message.MessageCreateListener;
 import org.javacord.api.util.event.ListenerManager;
 import org.json.simple.JSONArray;
@@ -38,12 +39,12 @@ public class Scattergories extends Thread {
 
     private static HashMap<String, String> images = new HashMap<>(); // HashMap of all images that the bot can use
 
-    private static final Color embedColor = new Color(155, 89, 182);
+    private static final Color embedColor = new Color(194, 0, 0);
 
-    private final MessageCreateEvent event;
+    private final SlashCommandInteraction interaction;
     private final DiscordApi api;
-    public Scattergories(MessageCreateEvent event, DiscordApi api) {
-        this.event = event;
+    public Scattergories(SlashCommandInteraction interaction, DiscordApi api) {
+        this.interaction = interaction;
         this.api = api;
         try {
             // Store the links to all images into the "images" HashMap
@@ -63,15 +64,13 @@ public class Scattergories extends Thread {
     }
 
     public void run() {
-        TextChannel channel = event.getChannel();
-        Message message = event.getMessage();
+        TextChannel channel = interaction.getChannel().get();
+        User creator = interaction.getUser();
 
         // Checks if the message was sent in a DM
         if (channel.asPrivateChannel().isPresent()) {
             return;
         }
-
-        User creator = message.getAuthor().asUser().get();
 
         // Set up first embed sent to all users
         // Lets them know how to join the game and how the game works
@@ -85,7 +84,11 @@ public class Scattergories extends Thread {
         firstEmbed.setColor(embedColor);
 
 
-        Message firstMessage = channel.sendMessage(firstEmbed).join();
+        InteractionOriginalResponseUpdater response = interaction.createImmediateResponder()
+                .addEmbed(firstEmbed)
+                .respond().join();
+
+        Message firstMessage = response.update().join();
         firstMessage.addReaction("👍").join();
 
 
@@ -144,6 +147,15 @@ public class Scattergories extends Thread {
 
             } else if (messageReceived.getContent().toLowerCase().startsWith("!categories")) {
                 int num = Integer.parseInt(messageReceived.getContent().split(" ")[1]);
+                if (num > 20) {
+                    creator.sendMessage("The maximum amount of categories is **20**.");
+                    return;
+                }
+
+                if (num < 1) {
+                    creator.sendMessage("The minimum amount of categories is **1**.");
+                    return;
+                }
                 atomCategoryCount.set(num);
             }
             // Resend message to game creator
@@ -187,17 +199,19 @@ public class Scattergories extends Thread {
 
         // Stop if only one player joined
         if (players.size() <= 1) {
+            creator.sendMessage("The Scattergories game in <#" + channel.getIdAsString() + "> was cancelled because too few players joined.");
             firstMessage.delete().join();
             return;
         }
 
         // Stop if more than the max amount of players joined
         if (players.size() > maxPlayers) {
+            creator.sendMessage("The Scattergories game in <#" + channel.getIdAsString() + "> was cancelled because too many players joined.");
             firstMessage.delete().join();
             return;
         }
 
-        // Setting up answers Hashmap
+        // Set up answers Hashmap
         for (int i = 0; i < players.size(); i++) {
             User u = players.get(i);
             ArrayList<String> blanks = new ArrayList<>();
@@ -291,7 +305,9 @@ public class Scattergories extends Thread {
                         continue;
                     }
 
+                    System.out.println(categoryAnswer);
                     answers.get(user).set(categoryNumber - 1, categoryAnswer);
+                    System.out.println(answers.get(user).get(categoryNumber - 1));
                 }
 
                 Message botSentMessage = messages.get(messageCreateEvent.getChannel().asPrivateChannel().get().getRecipient().get());
@@ -309,7 +325,7 @@ public class Scattergories extends Thread {
                 // Update categories message with new answer
                 int userAnswerCount = 0;
                 for (int i = 0; i < userCategories.split("\n").length; i++) {
-                    if (i + 1 == categories.size()) {
+                    if (!answers.get(user).get(i).equals("")) {
                         newCategoryMessageBuilder.append((i + 1) + ". " + categories.get(i) + " **" + answers.get(user).get(i) + "**\n");
                         userAnswerCount++;
                         continue;
@@ -342,9 +358,9 @@ public class Scattergories extends Thread {
         if (!running.get()) {
             return;
         }
+
         // Checks if there are answer users with no answers
         // Removes player if they didn't answer (AFK player)
-
         ArrayList<Object> AFKUsers = new ArrayList();
         for (Object key : answers.keySet()) {
             ArrayList<String> a = answers.get(key);
@@ -361,8 +377,6 @@ public class Scattergories extends Thread {
             answers.remove(AFKUsers.get(i));
             players.remove(AFKUsers.get(i));
         }
-
-
 
 
         // Iterate through all categories
@@ -572,6 +586,15 @@ public class Scattergories extends Thread {
         return String.valueOf(letters.charAt(rand.nextInt(letters.length())));
     }
 
+    /**
+     * Counts down until the game starts.
+     * Updates the main message's timer until the game starts.
+     *
+     * @param m The main message that players join through.
+     * @param adminMessage The message sent to the admin with different configuration options.
+     * @param secondsUntilStart Amount of time until the game will begin.
+     * @return A list of players that have joined the game.
+     */
     private ArrayList<User> countdownToStart(Message m, Message adminMessage, int secondsUntilStart) {
         ArrayList<User> players = new ArrayList();
 
@@ -656,6 +679,12 @@ public class Scattergories extends Thread {
         return players;
     }
 
+    /**
+     * Counts down the game until it finishes (players add their answers).
+     * Updates each player's embeds with the time until the game is over.
+     *
+     * @param secondsUntilEnd How long players get to submit answers.
+     */
     private void countdownToEnd(int secondsUntilEnd) {
         try {
             while (secondsUntilEnd > 0) {
@@ -696,6 +725,15 @@ public class Scattergories extends Thread {
         }
     }
 
+    /**
+     * Counts down each of the voting periods.
+     * Updates the main embed's timer
+     *
+     * @param messagesMap HashMap with Messages and Users (Messages sent to the main channel with the user's answer).
+     * @param seconds How long the players get to vote.
+     * @param users ArrayList of users that are playing.
+     * @return HashMap of Users and HashMaps of Strings and Integers. The HashMaps of Strings and Integers is the amount of yes and no votes that the user's answer received.
+     */
     private HashMap<User, HashMap<String, Integer>> countDownRounds(HashMap<Message, User> messagesMap, int seconds, ArrayList<User> users) {
         try {
             ArrayList<Message> messages = new ArrayList();
